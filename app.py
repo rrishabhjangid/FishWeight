@@ -1,42 +1,97 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import LabelEncoder
 
-st.title("Fish Weight Prediction App")
+# Set page configuration
+st.set_page_config(page_title="Fish Weight Predictor", layout="wide")
 
-# Load and process data (Simplified based on your notebook)
+st.title("🐟 Fish Weight Prediction App")
+st.markdown("""
+This app predicts the weight of a fish based on its measurements using a **Linear Regression** model.
+""")
+
+# Load and process data
 @st.cache_data
-def load_data():
+def load_and_clean_data():
+    # Ensure Fish.csv is in the same GitHub folder
     df = pd.read_csv('Fish.csv')
-    df.rename(columns={'Length1': 'Vertical_Length', 'Length3': 'Cross_Length'}, inplace=True)
+    
+    # Rename columns as done in your notebook
+    df.rename(columns={
+        'Length1': 'Vertical_Length',
+        'Length2': 'Diagonal_Length',
+        'Length3': 'Cross_Length'
+    }, inplace=True)
+    
+    # Encode Species
     le = LabelEncoder()
-    df['Species'] = le.fit_transform(df['Species'])
-    # Keeping features identified in your VIF/Lasso analysis: Species, Vertical_Length, Height
+    df['Species_Encoded'] = le.fit_transform(df['Species'])
+    
     return df, le
 
-df, le = load_data()
+try:
+    df, le = load_and_clean_data()
 
-# Sidebar for inputs
-st.sidebar.header("Input Fish Measurements")
-species_choice = st.sidebar.selectbox("Species", le.classes_)
-v_length = st.sidebar.number_input("Vertical Length (cm)", value=25.0)
-height = st.sidebar.number_input("Height (cm)", value=10.0)
+    # --- SIDEBAR INPUTS ---
+    st.sidebar.header("Input Fish Measurements")
+    
+    selected_species = st.sidebar.selectbox("Select Species", options=le.classes_)
+    species_idx = list(le.classes_).index(selected_species)
+    
+    # Based on your notebook's Lasso/VIF analysis, we use: Species, Vertical_Length, Height
+    v_length = st.sidebar.slider("Vertical Length (cm)", 
+                                 float(df['Vertical_Length'].min()), 
+                                 float(df['Vertical_Length'].max()), 25.0)
+    
+    height = st.sidebar.slider("Height (cm)", 
+                               float(df['Height'].min()), 
+                               float(df['Height'].max()), 10.0)
 
-# Model Training (Doing it on the fly for simplicity, or load a pickle file)
-X = df[['Species', 'Vertical_Length', 'Height']]
-y = df['Weight']
+    # --- MODEL TRAINING ---
+    # We use the features identified as best in your notebook
+    features = ['Species_Encoded', 'Vertical_Length', 'Height']
+    X = df[features]
+    y = df['Weight']
 
-model = LinearRegression()
-model.fit(X, y)
+    model = LinearRegression()
+    model.fit(X, y)
 
-# Prediction
-input_data = np.array([[le.transform([species_choice])[0], v_length, height]])
-prediction = model.predict(input_data)
+    # --- PREDICTION ---
+    input_values = np.array([[species_idx, v_length, height]])
+    prediction = model.predict(input_values)
 
-st.write(f"### Predicted Weight of {species_choice}:")
-st.success(f"{round(prediction[0], 2)} Grams")
+    # Display Prediction
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"### Predicted Weight:")
+        st.success(f"**{round(max(0, prediction[0]), 2)} Grams**")
+    
+    with col2:
+        st.write("### Input Summary")
+        st.write(f"- **Species:** {selected_species}")
+        st.write(f"- **Length:** {v_length} cm")
+        st.write(f"- **Height:** {height} cm")
 
-st.write("Correlation Heatmap of the dataset:")
-st.image("https://raw.githubusercontent.com/streamlit/docs/main/public/images/tutorials/pandas-tutorial/dataframe.png") # Placeholder
+    st.divider()
+
+    # --- VISUALIZATION (FIXED HEATMAP) ---
+    st.write("### Data Exploration")
+    
+    show_heatmap = st.checkbox("Show Correlation Heatmap")
+    if show_heatmap:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        # Drop non-numeric for correlation
+        numeric_df = df.drop(['Species'], axis=1)
+        corr = numeric_df.corr()
+        sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f", ax=ax)
+        st.pyplot(fig)
+
+    st.write("### Raw Dataset (Preview)")
+    st.dataframe(df.head(10))
+
+except FileNotFoundError:
+    st.error("Error: 'Fish.csv' not found. Please ensure the dataset is uploaded to your GitHub repository.")
