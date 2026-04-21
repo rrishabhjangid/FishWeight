@@ -4,127 +4,114 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import LabelEncoder
 
-# 1. Set Page Configuration for a cleaner look
+# 1. Page Configuration
 st.set_page_config(
     page_title="Fish Weight Predictor",
     page_icon="🐟",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# 2. Custom CSS to enhance UI styling
+# 2. Custom Styling
 st.markdown("""
     <style>
     .main {
-        background-color: #f5f7f9;
+        background-color: #f0f2f6;
     }
-    .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
+    .stNumberInput, .stSelectbox {
         border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    div.stButton > button:first-child {
-        background-color: #007bff;
-        color: white;
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
+    .prediction-card {
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 15px;
+        border-left: 5px solid #007bff;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. Load and process data
+# 3. Data Loading
 @st.cache_data
-def load_and_clean_data():
+def load_data():
     try:
         df = pd.read_csv('Fish.csv')
-        # Standardizing names as per your notebook analysis
         df.rename(columns={'Length1': 'Vertical_Length', 'Length3': 'Cross_Length'}, inplace=True)
         le = LabelEncoder()
         df['Species_Encoded'] = le.fit_transform(df['Species'])
         return df, le
-    except FileNotFoundError:
+    except:
         return None, None
 
-df, le = load_and_clean_data()
+df, le = load_data()
 
 if df is not None:
-    # --- SIDEBAR: Configuration ---
-    with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/2829/2829818.png", width=100)
-        st.title("Settings")
-        st.info("This model uses Linear Regression to estimate fish weight based on Species, Vertical Length, and Height.")
-        st.divider()
-        st.write("### Data Range Info")
-        st.caption(f"Min Weight: {df['Weight'].min()}g")
-        st.caption(f"Max Weight: {df['Weight'].max()}g")
+    # --- HEADER ---
+    st.title("⚖️ Fish Weight Estimator")
+    st.write("Provide the species and physical dimensions below to estimate the weight.")
 
-    # --- MAIN UI: Header ---
-    st.title("⚖️ Fish Weight Prediction Tool")
-    st.markdown("---")
+    # --- INPUT SECTION ---
+    with st.container():
+        st.subheader("Physical Characteristics")
+        
+        # Using columns to organize inputs better
+        row1_col1, row1_col2 = st.columns(2)
+        
+        with row1_col1:
+            selected_species = st.selectbox(
+                "🐟 Species", 
+                options=le.classes_,
+                help="Select the specific breed of the fish."
+            )
+            species_idx = list(le.classes_).index(selected_species)
 
-    # --- INPUT SECTION: Organized into Columns ---
-    st.subheader("1. Enter Fish Specifications")
-    
-    # Create two columns for inputs
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        selected_species = st.selectbox(
-            "Select Fish Species", 
-            options=le.classes_,
-            help="Choose the species of the fish you want to weigh."
-        )
-        species_idx = list(le.classes_).index(selected_species)
+        with row1_col2:
+            # We use the median of the dataset as the default value for a 'better' starting point
+            v_length = st.number_input(
+                "📏 Vertical Length (cm)", 
+                min_value=0.0, 
+                value=float(df['Vertical_Length'].median()),
+                format="%.2f",
+                help="Measurement from the nose to the beginning of the tail."
+            )
 
-    with col2:
-        v_length = st.number_input(
-            "Vertical Length (cm)", 
-            min_value=0.0, 
-            max_value=100.0, 
-            value=float(df['Vertical_Length'].median()),
-            step=0.1
-        )
-        height = st.number_input(
-            "Fish Height (cm)", 
-            min_value=0.0, 
-            max_value=50.0, 
-            value=float(df['Height'].median()),
-            step=0.1
-        )
+        row2_col1, row2_col2 = st.columns(2)
+        with row2_col1:
+            height = st.number_input(
+                "📐 Body Height (cm)", 
+                min_value=0.0, 
+                value=float(df['Height'].median()),
+                format="%.2f",
+                help="Maximum vertical thickness of the fish body."
+            )
+        
+        with row2_col2:
+            st.write(" ") # Spacer
+            st.write(" ") # Spacer
+            predict_btn = st.button("Calculate Weight", use_container_width=True)
 
-    # --- MODEL PROCESSING ---
-    features = ['Species_Encoded', 'Vertical_Length', 'Height']
-    X = df[features]
+    # --- MODEL & PREDICTION ---
+    # Training on relevant features identified in your notebook
+    X = df[['Species_Encoded', 'Vertical_Length', 'Height']]
     y = df['Weight']
+    model = LinearRegression().fit(X, y)
 
-    model = LinearRegression()
-    model.fit(X, y)
+    if predict_btn:
+        input_data = np.array([[species_idx, v_length, height]])
+        prediction = model.predict(input_data)
+        result = round(max(0, prediction[0]), 2)
 
-    # --- PREDICTION AND RESULTS ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("Calculate Estimated Weight"):
-        input_values = np.array([[species_idx, v_length, height]])
-        prediction = model.predict(input_values)
+        st.markdown("---")
         
-        # Clip negative results to 0
-        final_weight = round(max(0, prediction[0]), 2)
+        # Displaying result in a custom formatted card
+        st.markdown(f"""
+            <div class="prediction-card">
+                <h3 style='margin-top:0;'>Estimation Results</h3>
+                <p>Based on a <b>Linear Regression</b> model trained on 159 fish samples:</p>
+                <h1 style='color: #007bff;'>{result} Grams</h1>
+            </div>
+            """, unsafe_allow_html=True)
         
-        st.divider()
-        st.subheader("2. Resulting Prediction")
-        
-        # Displaying result in a metric-like card
-        res_col1, res_col2, res_col3 = st.columns([1, 2, 1])
-        with res_col2:
-            st.metric(label=f"Estimated Weight for {selected_species}", value=f"{final_weight} Grams")
-            
-            if final_weight > 1000:
-                st.warning("That's a big fish! 🐋")
-            elif final_weight > 0:
-                st.success("Weight calculated successfully! ✅")
-            else:
-                st.error("Invalid measurements; weight cannot be predicted.")
-
+        if result > 0:
+            st.balloons()
 else:
-    st.error("⚠️ Dataset not found! Please upload 'Fish.csv' to your GitHub repository.")
+    st.error("Missing Dataset: Please upload 'Fish.csv' to your GitHub repository.")
